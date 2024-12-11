@@ -20,7 +20,7 @@ library(enrichplot)
 library(ggrepel)
 
 
-wjscptlwkr<-wjscptlwkrdmfqkdwlgkqslek #실수로 전체 시작 눌렀을때 오류로 중지시키기
+
 
 library(ttr) #for geom_split_violin()
 
