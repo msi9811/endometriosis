@@ -1,35 +1,34 @@
 #packages----
-.libPaths("/home/user02/R/x86_64-pc-linux-gnu-library/4.3")
 library(ggplot2)
 library(reshape2)
 library(ggpubr)
 library(patchwork)
-library(IOBR)
-library(ggVennDiagram)
 library(vegan)
 library(gridExtra)
 library(ALDEx2)
 library(phyloseq)
 library(pheatmap)
-library(tidyverse)
+library(microbiomeMarker)
+#library(tidyverse)
 library(edgeR)
 library(DESeq2)
 library(Hmisc)
 library(clusterProfiler)
-library(enrichplot)
+library(org.Hs.eg.db)
+#library(enrichplot)
 library(ggrepel)
+#library(RCy3) #cytoscape
 
+BiocManager::install('clusterProfiler')
 
-
-
-library(ttr) #for geom_split_violin()
+#library(ttr) #for geom_split_violin()
 
 used.data<-'/data2/msi/Rdata/EMT_bulk.RData'
 
 #data processing----
 patient.info<-read.table('/home/user02/srr_file/SraRunTable_GSE179640.txt',sep = ',',header = T)
 
-buf<-readxl::read_xlsx('/data2/msi/endometriosis/endometriosis/41556_2022_961_MOESM2_ESM.xlsx')
+buf<-readxl::read_xlsx('/data1/endometriosis/endometriosis/41556_2022_961_MOESM2_ESM.xlsx')
 buf1<-patient.info[c('Run','source_name','condition','sample_location','tissue','Method')]
 buf2<-merge(buf1,buf,by.x='source_name',by.y='PID',all.x=T)
 
@@ -65,32 +64,11 @@ rownames(g.data)<-g.data$name
 g.data<-g.data[,-1]
 g.data<-data.frame(t(g.data))
 
-
 g.data[is.na(g.data)]<-0
 s.data[is.na(s.data)]<-0
 
 
 #make taxanomy reference
-mpa<-data.frame()
-for (i in rownames(total.data)){
-  buf<-paste0('/data2/msi/endometriosis/endometriosis/kraken/',total.data[i,'Run'],'.trim.fastq.report.tsv')
-  buf<-read.table(buf,sep = '\t',header=F)
-  for (j in buf$V1){
-    k<-unlist(strsplit(j,'[|]'))
-    k<-unlist(strsplit(k[length(k)],'__'))
-    j<-c(j,k)
-    if (nrow(mpa)==0){mpa<-data.frame(j)}
-    else{mpa<-cbind(mpa,j)}
-  }
-}
-mpa<-data.frame(t(mpa))
-mpa$X3<-gsub(' ','_',mpa$X3)
-mpa$X3<-gsub('-','.',mpa$X3)
-mpa$X3<-gsub('[[]','X.',mpa$X3)
-mpa$X3<-gsub('[]]','.',mpa$X3)
-mpa$X3<-gsub('[(]','.',mpa$X3)
-mpa$X3<-gsub('[)]','.',mpa$X3)
-mpa<-mpa[!duplicated(mpa),]
 
 #labeling
 buf<-data.frame(colnames(s.data))
@@ -134,9 +112,9 @@ Fun<-colnames(total.data.s)[startsWith(colnames(total.data.s),'F')]
 Bac<-colnames(total.data.s)[startsWith(colnames(total.data.s),'B')]
 Vir<-colnames(total.data.s)[startsWith(colnames(total.data.s),'V')]
 
-total.data.sf<-total.data.s[,c(colnames(total.data.s)[1:11],Fun)]
+#total.data.sf<-total.data.s[,c(colnames(total.data.s)[1:11],Fun)]
 total.data.sb<-total.data.s[,c(colnames(total.data.s)[1:11],Bac)]
-total.data.sv<-total.data.s[,c(colnames(total.data.s)[1:11],Vir)]
+#total.data.sv<-total.data.s[,c(colnames(total.data.s)[1:11],Vir)]
 
 #########################################여기까지###########################################
 ##richness and evenness check----
@@ -416,8 +394,11 @@ rownames(physeq.s@tax_table)<-1:nrow(physeq.s@tax_table)
 
 #bacteria
 OTU = otu_table(as.matrix(lefse.sdata.b), taxa_are_rows = TRUE)
+taxamet.b[is.na(taxamet.b)]<-'NA'
 TAX = tax_table(as.matrix(taxamet.b))
 physeq.sb <- phyloseq(OTU, TAX, SAM)
+
+
 
 rownames(physeq.sb@otu_table)<-1:nrow(physeq.sb@otu_table)
 rownames(physeq.sb@tax_table)<-1:nrow(physeq.sb@tax_table)
@@ -482,6 +463,9 @@ mm_test.sbb<- run_lefse( physeq.sb,
                          taxa_rank = 'all',
                          multigrp_strat = TRUE
 )
+table(rowSums(OTU==0))
+SAM
+
 mm_test.stb<- run_lefse( physeq.sb,
                          wilcoxon_cutoff = 0.05,
                          norm = "CPM", 
@@ -656,6 +640,7 @@ p.limma+p.edger
 
 #after upside result====
 ##preprocessing----
+write.csv(total.data.s.filter,'microbiome_counts_matrix.csv')
 total.data.s.filter<-total.data.s[!total.data.s$`Endometrium histology`%in%c('exogenous hormonal effect','inactive endometrium','n.a'),]
 
 #total.data.s.filter<-total.data.s.filter[,c(rep(T,11),colSums(total.data.s.filter[12:ncol(total.data.s.filter)])!=0)]
@@ -690,20 +675,24 @@ names(abb.Color)<-c('HC','EM')
 names(abb.Color1)<-c('HC','EM')
 
 ###alpha-----
-
+library(readxl)
+library(writexl)
 
 M.alpha.filter<-melt(alpha.filter,id.vars = c("tissue",'source_name','condition'))
-
 M.alpha.filter$variable<-factor(M.alpha.filter$variable,levels=c('Chao1','Chao1_b','Chao1_f','shannon','shannon_b','shannon_f'))
-M.alpha.filter$condition<-factor(ifelse(M.alpha.filter$condition=='Control','HC','EM'),levels=c('HC','EM'))
+M.alpha.filter$condition<-factor(ifelse(M.alpha.filter$condition=='Control','Control','Endometriosis'),
+                                 levels=c('Control','Endometriosis'))
 
-p.filter.diversity<-ggplot(M.alpha.filter[M.alpha.filter$variable%in%c('Chao1','shannon'),],aes(x=condition,y=value,fill=condition,color=condition))+geom_boxplot()+theme_pubr()+scale_fill_manual(values = abb.Color1)+
+p.filter.diversity<-ggplot(M.alpha.filter[M.alpha.filter$variable%in%c('Chao1','shannon'),],
+                           aes(x=condition,y=value,fill=condition))+
+  geom_boxplot()+theme_pubr()+scale_fill_manual(values = c('#44f','#f44'))+
   facet_wrap(~variable,nrow=1,scales = 'free')+
-  stat_compare_means(method='wilcox.test',label = 'p',label.x.npc = 0.6,label.y.npc = 0.9, family='arial',)+
-  theme(text=element_text(family="arial",face = 'bold',size=10), axis.text = element_text(face='plain'),
-        axis.title.x = element_blank(),axis.text.x=element_blank(), axis.title.y=element_text(face='plain'),
-        legend.title=element_blank(),legend.text=element_text(face='plain'))+
-  labs(y='score')+scale_color_manual(values=abb.Color)
+  stat_compare_means(method='wilcox.test',label = 'p',label.x.npc = 0.5,label.y.npc = 0.9, family='arial',)+
+  theme(text=element_text(family="arial",size=12), strip.text=element_text(face='bold'),
+        axis.title.x=element_blank(),axis.ticks.x=element_blank(),axis.text.x=element_blank(),
+        legend.title = element_blank())+
+  labs(y='score')
+p.filter.diversity
 
 shapiro.test(M.alpha.filter[M.alpha.filter$variable%in%c('Chao1'),'value'])
 shapiro.test(M.alpha.filter[M.alpha.filter$variable%in%c('shannon'),'value'])
@@ -725,16 +714,17 @@ pv.filter3<-adonis2(total.data.s.filter[Bac+Vir+Fun+Euc==1]~condition3,total.dat
 
 
 p.filter.beta<-ggplot(mds.data.filter, aes(x=MDS1,y=MDS2,color=type))+geom_point()+theme_pubr()+
-  theme(text=element_text(family="arial",size=10),legend.title=element_blank())+scale_color_manual(values = c(abb.Color))+
+  theme(text=element_text(family="arial",size=12),legend.title=element_blank())+scale_color_manual(values = c('#44f','#f44'))+
   annotate("text", x=min(mds.data.filter$MDS1)+0.4, y=max(mds.data.filter$MDS2), label=paste0("p = ",pv.filter),family='arial')
-
+p.filter.beta
+write_xlsx(mds.data.filter,'Supporting Data Values.xlsx')
 
 ###visualization----
 
 p.filter.diversity+p.filter.beta+plot_layout(widths=c(1,1.8))
+p.filter.diversity
 
-
-
+dim(lefse.filter)
 ##different abundance analysis====
 
 ###lefse----
@@ -746,6 +736,7 @@ lefse.filter.b<-lefse.filter[startsWith(rownames(lefse.filter),'d__Bacteria'),]
 lefse.filter.f<-lefse.filter[startsWith(rownames(lefse.filter),'d__Eukaryota|k__Fungi'),]
 lefse.filter.v<-lefse.filter[startsWith(rownames(lefse.filter),'d__Viruses'),]
 lefse.filter.o<-lefse.filter[!(rownames(lefse.filter)%in%rownames(lefse.filter.b)),]
+
 
 taxamet<-data.frame(Kingdom="", Phylum='', Class='', Order='', Family='', Genus='',Species='')
 taxamet<-taxamet[-1,]
@@ -763,10 +754,43 @@ for (i in rownames(lefse.filter)){
   }
 }
 
+
 taxamet.b<-taxamet[startsWith(rownames(taxamet),'d__Bacteria'),]
 taxamet.f<-taxamet[startsWith(rownames(taxamet),'d__Eukaryota|k__Fungi'),]
 taxamet.v<-taxamet[startsWith(rownames(taxamet),'d__Viruses'),]
 taxamet.o<-taxamet[!(rownames(taxamet)%in%rownames(taxamet.b)),]
+
+rownames(lefse.filter.b)==rownames(taxamet.b)
+buf<-lefse.filter.b
+buf$k<-taxamet.b$Kingdom
+buf$p<-taxamet.b$Phylum
+buf$c<-taxamet.b$Class
+buf$o<-taxamet.b$Order
+buf$f<-taxamet.b$Family
+buf$g<-taxamet.b$Genus
+buf$s<-taxamet.b$Species
+
+buf1<-melt(buf,id.vars = c('k','p','c','o','f','g','s'))
+buf2<-buf1[,c('k','variable','value')]
+buf2$taxa<-'Kingdom'
+
+buf3<-buf1[,c('s','variable','value')]
+buf3$taxa<-'Species'
+colnames(buf3)<-colnames(buf2)
+buf4<-aggregate(buf3$value,list(buf3$k),sum)
+buf4<-buf4[order(buf4$x,decreasing = T)[1:10],1]
+buf3$k<-ifelse(buf3$k%in%buf4,buf3$k,'Others')
+buf2<-rbind(buf2,buf3)
+
+buf3$k<-factor(buf3$k,levels = c(buf4,'Others'))
+buf3$type<-''
+for (i in rownames(buf3)){
+  buf3[i,'type']<-total.data[total.data$Run==buf3[i,'variable'],'sample_location']
+}
+
+ggplot(buf3,aes(x=variable,y=value,fill=k))+geom_bar(position="fill", stat="identity")+
+  facet_grid(type~.,space='free',scales='free')+
+  gg.default+coord_flip()+labs(x='',y='relative abundance',fill='')
 
 #total
 
@@ -779,30 +803,17 @@ rownames(physeq.filter@otu_table)<-1:nrow(physeq.filter@otu_table)
 rownames(physeq.filter@tax_table)<-1:nrow(physeq.filter@tax_table)
 
 #bacteria
-OTU = otu_table(as.matrix(lefse.filter.b), taxa_are_rows = TRUE)
-TAX = tax_table(as.matrix(taxamet.b))
+table(rowSums(lefse.filter.b==0))
+tof<-rowSums(lefse.filter.b==0)!=10
+taxamet.b<-taxamet.b[tof,]
 
+OTU = otu_table(as.matrix(lefse.filter.b[tof,]), taxa_are_rows = TRUE)
+TAX = tax_table(as.matrix(taxamet.b))
+table(rowSums(OTU==0))
 physeq.filter.b <- phyloseq(OTU, TAX, SAM)
 
 rownames(physeq.filter.b@otu_table)<-1:nrow(physeq.filter.b@otu_table)
 rownames(physeq.filter.b@tax_table)<-1:nrow(physeq.filter.b@tax_table)
-
-#fungi
-OTU = otu_table(as.matrix(lefse.filter.f), taxa_are_rows = TRUE)
-TAX = tax_table(as.matrix(taxamet.f))
-physeq.filter.f <- phyloseq(OTU, TAX, SAM)
-
-rownames(physeq.filter.f@otu_table)<-1:nrow(physeq.filter.f@otu_table)
-rownames(physeq.filter.f@tax_table)<-1:nrow(physeq.filter.f@tax_table)
-
-#other
-OTU = otu_table(as.matrix(lefse.filter.o), taxa_are_rows = TRUE)
-TAX = tax_table(as.matrix(taxamet.o))
-SAM = sample_data(data.frame(total.data.s.filter[1:11],row.names = 'Run'))
-physeq.filter.o <- phyloseq(OTU, TAX, SAM)
-
-rownames(physeq.filter.o@otu_table)<-1:nrow(physeq.filter.o@otu_table)
-rownames(physeq.filter.o@tax_table)<-1:nrow(physeq.filter.o@tax_table)
 
 #visualization
 mm_test.filter <- run_lefse( physeq.filter,
@@ -826,6 +837,17 @@ plot_ef_bar(mm_test.filter.b)
 
 total.data.s.filter[endsWith(colnames(total.data.s.filter),'tum')]
 
+
+table(endsWith(mm_test.filter.b@tax_table,'bacterium'))
+mm_test.filter.b@tax_table[endsWith(mm_test.filter.b@tax_table,'bacterium')]
+mm_test.filter.b@tax_table[startsWith(mm_test.filter.b@tax_table,'k__DBacteria|p__Fusobacteriota|c__')]
+plot_ef_bar(mm_test.filter.b@marker_table[startsWith(mm_test.filter.b@tax_table,'k__DBacteria|p__Fusobacteriota|c__')])
+
+
+mm_test.filter.b@marker_table
+
+
+#여기가 lefse 결과 만드는 곳----
 tof<-c()
 for (i in mm_test.filter.b@marker_table$feature){
   if(length(unlist(strsplit(i,'[|]')))==7){tof<-c(tof,T)}
@@ -834,14 +856,17 @@ for (i in mm_test.filter.b@marker_table$feature){
 
 plot_ef_bar(mm_test.filter.b)+plot_ef_bar(mm_test.filter.b@marker_table[tof])
 
-
+#write.csv(data.frame(buf),'sdv.csv')
 buf<-mm_test.filter.b@marker_table[tof]
 buf$feature<-gsub('s__','',buf$feature)
-buf$enrich_group<-factor(ifelse(buf$enrich_group=='Control','HC','EM'),levels=c('HC','EM'))
+#buf$enrich_group<-factor(ifelse(buf$enrich_group=='Control','Control','Endometriosis'),
+#                         levels=c('Control','Endometriosis'))
 
-plot_ef_bar(buf)+theme_pubr()+scale_fill_manual(values = Color1)+theme(text=element_text(family="serif",face = 'plain'), axis.text = element_text(face='plain'), axis.title.y=element_text(face='plain'),legend.title=element_blank(),legend.text=element_text(face='plain'))+labs(y='score')+scale_color_manual(values=Color)
-p.lefse<-plot_ef_bar(buf)+theme_pubr()+scale_fill_manual(values = abb.Color1)+theme(text=element_text(family="arial",face = 'plain',size=10), axis.text = element_text(face='plain'), axis.title.y=element_text(face='plain'),legend.title=element_blank(),legend.text=element_text(face='plain'))+labs(y='')
+plot_ef_bar(buf)+gg.default+scale_fill_manual(values=c('#44f','#F44'))+
+  theme(legend.title=element_blank())
 
+p.lefse<-plot_ef_bar(buf)+theme_pubr()+scale_fill_manual(values = Color1)+theme(text=element_text(family="arial",face = 'plain',size=12), axis.text = element_text(face='plain'), axis.title.y=element_text(face='plain'),legend.title=element_blank(),legend.text=element_text(face='plain'))+labs(y='')
+p.lefse
 #visualization diversity + lefse====
 p.filter.diversity+p.filter.beta+p.lefse+plot_layout(widths=c(2.4,1.6,1.7))
 #p.filter.diversity+p.filter.beta+plot_layout(heights = c(1,2))
@@ -867,13 +892,18 @@ colnames(cereus.count)<-buf$feature
 cereus.count$type<-patient.info[patient.info$Run %in% rownames(cereus.count),'condition']
 cereus.count$type<-factor(ifelse(cereus.count$type=='Control','HC','EM'),levels=c('HC','EM'))
 cereus.count.melt<-melt(cereus.count,id.vars = 'type')
-cereus.count.melt<-cereus.count.melt[cereus.count.melt$variable %in%]
 
-p.lefse+ggplot(cereus.count.melt, aes(x=type,y=value,fill=type,color=type))+geom_boxplot()+
-  facet_wrap(~variable,scales = 'free')+theme_pubr()+scale_fill_manual(values=abb.Color1)+scale_color_manual(values=abb.Color)+
-  stat_compare_means(method='kruskal.test',label='p',family='arial',label.y.npc = 0.8)+
-  theme(text = element_text(family='arial',size=12),axis.title.x = element_blank(),axis.text.x = element_blank())+
-  labs(color='',fill='',y='relative abundance')+plot_layout(ncol=1)
+cereus.count.melt$variable<-factor(cereus.count.melt$variable,
+                                   levels=c("Bacillus cereus", "Barnesiella viscericola", "Pseudofrankia inefficax", 
+                                      "Acidovorax sp. 5MLIR", "Rhodovastum atsumiense"))
+
+ggplot(cereus.count.melt, aes(x=type,y=value,fill=type))+geom_boxplot()+
+  facet_wrap(~variable,scales = 'free')+theme_pubr()+scale_fill_manual(values=c('#44f','#f44'))+
+  stat_compare_means(method='kruskal.test',label='p',family='arial',label.y.npc = 0.7,label.x.npc = 0.7)+
+  theme(text = element_text(family='arial',size=12),axis.ticks.x=element_blank(),
+        axis.title.x = element_blank(),axis.text.x = element_blank(),
+        strip.text=element_text(face='bold'))+
+  labs(color='',fill='',y='relative abundance') #756 680
 
 
 #immune cell data processing----
@@ -1025,19 +1055,20 @@ corr.df<-corr.df[!is.na(corr.df$r),]
 corr.df<-corr.df[order(corr.df$r,decreasing = T),]
 corr.df$sig<-ifelse(corr.df$p<0.1,corr.df$y,'')
 
-  
+
 
 ggplot(corr.df, aes(y=-log10(p),x=r,color=method,label=sig))+geom_point()+theme_pubr()+
   geom_text_repel(nudge_y = 1) 
 
+#여기가 immune correlation 플롯 생성하는 코드----
 buf<-corr.df[corr.df$method=='epic',]
 buf<-buf[order(buf$r),]
 buf$Y<-factor(buf$Y,levels = buf$Y)
 ggplot(buf, aes(y=Y,x=r,fill=type))+geom_bar(position="dodge", stat="identity")+
-  scale_fill_manual(values=c('red','blue'))+
-  theme_pubr()+theme(text=element_text(family="arial"),legend.position = 'none')+geom_text(aes(label=p.sym,x=-r/abs(r)/12,y=Y))+
-  labs(y='')
-
+  scale_fill_manual(values=c('#999','#999'))+
+  theme_pubr()+theme(text=element_text(family="arial"),legend.position = 'none')+geom_text(aes(label=p.sym,x=-r/abs(r)/5,y=Y))+
+  labs(y='',x='R')
+write_csv(total.data.s.filter,'svg.csv')
 
 buf1<-immune.filter.cibersort[c(3,5,12:ncol(immune.filter.cibersort))]
 immune.melt<-melt(buf1,id.vars = c('condition','tissue'))
@@ -1053,7 +1084,7 @@ library(DESeq2)
 {
   ensg<-c()
   gene<-c()
-  buf1<-read.csv('/data2/msi/endometriosis/endometriosis/gene_count_matrix.csv') # by stringtie
+  buf1<-read.csv('/data1/endometriosis/data/gene_count_matrix.csv') # by stringtie
   buf1<-buf1[buf1$gene_id!="<class 'str'>",]
   for (x in buf1$gene_id){
     y<-unlist(strsplit(x,'[|]'))
@@ -1257,12 +1288,14 @@ buf<-cor.df.gene.filter
 
 buf<-buf[buf$p<0.05,]
 
-ggplot(buf,aes(x=x,y=r,col=r))+geom_point()+scale_color_gradient2(low = "red", high = "blue",mid='gray',limits=c(-1,1))+theme(axis.text.x=element_blank())
+ggplot(buf,aes(x=x,y=r,col=p))+geom_point()+
+  scale_color_gradient2(low = "red", high = "blue",mid='gray',limits=c(0,1))+
+  theme(axis.text.x=element_blank())
 
 buf1<-buf[buf$r>0,]
 buf2<-buf[buf$r<0,]
-write.csv(buf1,'~/positive.csv')
-write.csv(buf2,'~/negative.csv')
+write.csv(buf1,'data/gene_pos_with_cereus.csv')
+write.csv(buf2,'data/gene_neg_with_cereus.csv')
 
 #GO with B.cereus====
 buf<-as.data.frame(dds.res)
@@ -1271,11 +1304,15 @@ buf<-buf[buf1$x,]
 dds.res.df<-dds.res.df[order(dds.res.df$log2FoldChange,decreasing = T),]
 gene_list<-dds.res.df$log2FoldChange
 names(gene_list)<-rownames(dds.res.df)
-
 gene_list[names(gene_list) %in% buf1$x]
 
 library(org.Hs.eg.db)
-gse.cereus<-gseGO(geneList=gene_list[names(gene_list) %in% buf1$x], 
+
+gene_list<-buf1[order(buf1$r,decreasing = T),'r']
+names(gene_list)<-buf1[order(buf1$r,decreasing = T),'x']
+gene_list<-gene_list[!duplicated(names(gene_list))]
+
+gse.cereus<-gseGO(geneList=gene_list[-length(gene_list)], 
                  ont ="ALL", 
                  keyType = "ALIAS", 
                  nPerm = 10000, 
@@ -1284,35 +1321,46 @@ gse.cereus<-gseGO(geneList=gene_list[names(gene_list) %in% buf1$x],
                  pvalueCutoff = 0.05, 
                  verbose = TRUE, 
                  OrgDb = org.Hs.eg.db, 
-                 pAdjustMethod = "none")
+                 pAdjustMethod = "none"
+                 )
+
+#require(DOSE)
+p.pathway.go<-dotplot(gse.cereus, showCategory=7,title='GO',split='ONTOLOGY') + facet_grid(ONTOLOGY~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
 
 
-
-require(DOSE)
-p1<-dotplot(gse.cereus, showCategory=7,title='GO',split='ONTOLOGY') + facet_grid(ONTOLOGY~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
-
-ids<-bitr(names(gene_list), fromType = "ALIAS", toType = "ENTREZID", OrgDb=org.Hs.eg.db)
-df <- dds.res.cereus[rownames(dds.res.cereus)%in%ids$ALIAS,]
-ids<-ids[ids$ALIAS %in% rownames(df),]
-table(rownames(df)==ids$ALIAS)
-df$Y = ids[which(rownames(df),ids$ALIAS),'ENTREZID']
+ids<-bitr(names(gene_list[-length(gene_list)]), fromType = "ALIAS", toType = "ENTREZID", OrgDb=org.Hs.eg.db)
 
 
-df<-dds.res.cereus[rownames(dds.res.cereus)%in%buf1$x,]
-kegg_gene_list <- df$log2FoldChange
+kegg_gene_list <- gene_list[-length(gene_list)]
 names(kegg_gene_list) <- ids$ENTREZID
-kegg_gene_list<-na.omit(kegg_gene_list)
-kegg_gene_list = sort(kegg_gene_list, decreasing = TRUE)
-kk2 <- gseKEGG(geneList     = kegg_gene_list,
+kegg_gene_list<-na.omit(names(kegg_gene_list))
+
+kegg_gene_list<-kegg_gene_list[na.omit(names(kegg_gene_list))]
+
+kegg_gene_list <- sort(kegg_gene_list, decreasing = TRUE)
+
+kegg.cereus <- gseKEGG(geneList     = kegg_gene_list,
                organism     = 'hsa',
                nPerm        = 10000,
                minGSSize    = 3,
                maxGSSize    = 800,
                pvalueCutoff = 0.05,
                pAdjustMethod = "none",
-               keyType       = "ncbi-geneid")
-p2<-dotplot(kk2, showCategory=7,title='KEGG') + facet_grid(.~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
+               keyType       = "ncbi-geneid",
+               by = 'DOSE')
 
+
+
+p.pathway.kegg<-dotplot(kegg.cereus, showCategory=7,title='KEGG') + facet_grid(.~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
+
+footprint<-'a
+            a
+            a
+            b'
+
+p.pathway.go/p.pathway.kegg+plot_layout(design = footprint)
+
+p.pathway.kegg$data$Description
 #Gene enrichment analysis====
 ##Gene Ontology====
 library('org.Hs.eg.db', character.only = TRUE)
@@ -1336,7 +1384,8 @@ dds.res.df<-dds.res.df[order(dds.res.df$log2FoldChange,decreasing = T),]
 
 gene_list<-dds.res.df[rownames(dds.res.df)%in%buf1$x,]$log2FoldChange
 names(gene_list)<-rownames(dds.res.df)
-
+length(gene_list)
+length(kegg_gene_list)
 gse.alias<-gseGO(geneList=gene_list, 
                  ont ="ALL", 
                  keyType = "ALIAS", 
@@ -5728,22 +5777,22 @@ colnames(buf)
 
 Color4<-c('#FFa5a5','#CB1106')
 
-value<-'AMH' #size AMH
+value<-'size' #size AMH
 p1<-ggplot(buf[buf$type=='Endometriosis',],aes(x=B.cereus, y=get(value),fill=B.cereus,color=B.cereus))+geom_boxplot()+theme_pubr(legend='none')+labs(x='Histopathologic score',y=value)+
-  scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
+  #scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
   theme(text=element_text(family='arial',size=12))
 p2<-ggplot(buf[buf$type=='Endometriosis',],aes(x=group, y=get(value), fill=group, color=group))+geom_boxplot()+theme_pubr(legend='none')+labs(y=value)+
-  scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
+  #scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
   theme(text=element_text(family='arial',size=12))+labs(x='')#+stat_compare_means(label='p') #0.28
 
 p1+p2
 
 value<-'Gravidity' #Gravidity Parity
 p1<-ggplot(buf,aes(x=B.cereus, y=get(value),fill=B.cereus,color=B.cereus))+geom_violin()+theme_pubr(legend='none')+labs(x='Histopathologic score',y=value)+
-  scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
+  #scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
   theme(text=element_text(family='arial',size=12))
 p2<-ggplot(buf[buf$type=='Endometriosis',],aes(x=group, y=get(value), fill=group, color=group))+geom_violin()+theme_pubr(legend='none')+labs(y=value)+
-  scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
+  #scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
   theme(text=element_text(family='arial',size=12))+stat_compare_means(label='p')
 
 p1+p2
@@ -5760,31 +5809,38 @@ p1<-ggplot(buf,aes(fill=`Infertility Y/N`,x=group))+geom_bar(position='fill')+la
   theme(text=element_text(family='arial',size=12))
 p1+p2
 
-ggplot(buf,aes(x=`Infertility Y/N`,fill=group))+geom_bar()+labs(y=value)+
-  theme_pubr()+
-  theme(text=element_text(family='arial',size=12))
+#파이플롯은 여기----
+table(patient.stain$`Staining level`,patient.stain$type)
+buf<-data.frame(Control=c(10,0,0,0,0),Endometriosis=c(5,3,19,21,20),row.names = c(0,1,2,3,4))
+buf$lv<-c('0','1','2','3','4')
+buf<-melt(buf,id.vars ='lv')
+buf$label<-buf$value
+buf[1:5,'label']<-round(buf[1:5,'label']/sum(buf[1:5,'label']),3)*100
+buf[6:10,'label']<-round(buf[6:10,'label']/sum(buf[6:10,'label']),3)*100
+buf$percent<-ifelse(paste0(buf$label,'%')=='0%','',paste0(buf$label,'%'))
+buf$position<-0
+buf[1:5,'position']<-sum(buf[1:5,'value'])
+j<-0
+for (i in 1:5){
+  j <- j + buf[i,'value']/2
+  buf[i,'position']<-buf[i,'position']-j
+  j <- j + buf[i,'value']/2
+}
+buf[6:10,'position']<-sum(buf[6:10,'value'])
+j<-0
+for (i in 6:10){
+  j <- j + buf[i,'value']/2
+  buf[i,'position']<-buf[i,'position']-j
+  j <- j + buf[i,'value']/2
+}
+buf
+ggplot(buf,aes(fill=lv,x='lv',y=value))+geom_bar(stat='identity',color='black')+coord_polar('y')+gg.default+
+  theme_void()+ facet_wrap(~variable,scale='free',ncol=1)+
+  geom_text(aes(x=1.7,y=position,label = percent),
+            size = 4,) +
+  scale_fill_manual(values=c('#EFF3FF','#BDD7E7','#6BAED6','#3182BD','#08519C'))+
+  theme(strip.text=element_text(size=12), legend.title=element_blank())
 
-ggplot(buf,aes(fill=`Infertility Y/N`,x=group))+geom_bar(position='fill')+
-  coord_polar('y')+labs(y=value)+
-  scale_fill_manual(values = paste0(Color,'99'))+theme_pubr()+facet_wrap(~group)+
-  theme(text=element_text(family='arial',size=12))
-
-ggplot(buf,aes(x='',y=value,fill=staining))+
-  geom_bar(position = 'fill',stat='identity',color="black")+
-  coord_polar('y')+
-  theme_void()+
-  scale_fill_brewer(palette = 'Blues')+
-  theme(text=element_text(family='arial',size=16),legend.title=element_text(size=12))+
-  geom_text(aes(x=1.65,label=paste0(round(value*100,1), '%')),size=4,position = position_stack(vjust=0.5))+
-  facet_wrap(~variable,ncol=2)+labs(fill='Histopathologic\nscore') #2배 안하고 저장
-
-ggplot(buf,aes(x='',y=stain,fill=stain))+
-  geom_bar(position = 'fill',stat='identity',color="black")+
-  coord_polar('y')+
-  theme_void()+
-  scale_fill_brewer(palette = 'Blues')+
-  theme(text=element_text(family='arial',size=16),legend.title=element_text(size=12))+
-  facet_wrap(~type,ncol=2)+labs(fill='B. cereus\nstaining intensity') #label text 수정정
 ##t-test----
 library(car)
 
@@ -5831,6 +5887,7 @@ Color2<-c('#01D11A','#fff700','#ff9500','#ff1100','#CB1106')
 value<-'AMH'
 ymax=20
 bb<-summary(lm(get(value)~b.t_rid,buf))
+buf
 p.corr.withsize.btrid<-ggplot(buf,aes(x=b.t_rid, y=get(value),color=stain))+geom_point()+theme_pubr()+
   labs(x='b/t RawIntDen',y=value)+scale_fill_manual(values = paste0(Color2,'aa'))+scale_color_manual(values = Color2)+
   theme(text=element_text(family='arial',size=12))+
@@ -5918,8 +5975,10 @@ total.data.gene$gene<-unlist(buf)
 total.data.gene<-aggregate(.~gene,total.data.gene,sum)
 rownames(total.data.gene)<-total.data.gene$gene
 total.data.gene<-total.data.gene[,-1]
-total.data.s.filter$condition3<-ifelse(total.data.s.filter$tissue=='Endometrium','Patient_Endometrium',total.data.s.filter$condition)
-dds.bulk.gene<-DESeqDataSetFromMatrix(total.data.gene,total.data.s.filter,~condition3)
+total.data.s.filter$condition3
+
+total.data.s.filter$condition3<-ifelse(total.data.s.filter$tissue=='Endometrium','Patient_Endometrium',as.character(total.data.s.filter$condition))
+dds.bulk.gene<-DESeqDataSetFromMatrix(total.data.gene,total.data.s.filter,~condition)
 dds.bulk.tissue<-DESeqDataSetFromMatrix(total.data.gene,total.data.s.filter,~tissue)
 
 Filter<-rowSums(counts(dds.bulk.gene)>10)>2
@@ -5938,16 +5997,16 @@ p.gene.pca.filter<-plotPCA(dds.bulk.tissue.norm,intgroup='condition3')+theme_pub
   geom_text_repel(aes(label= ifelse(dds.bulk.gene.norm$condition=='Control','Endometrium',dds.bulk.gene.norm$tissue)),color='black')
 p.gene.pca.filter
 
-dds.bulk.gene.norm$`Endometrium histology`
 
 dds.bulk.gene<-DESeq(dds.bulk.gene)
 dds.bulk.tissue<-DESeq(dds.bulk.tissue)
 
 res.bulk.ConVSPat<-results(dds.bulk.gene,contrast = c('condition3','Patient_Endometrium','Control'))
 res.bulk.umVSosis<-results(dds.bulk.gene,contrast = c('condition3','Endometriosis','Patient_Endometrium'))
-res.bulk.gene<-results(dds.bulk.gene,contrast = c('condition3','Endometriosis','Control'))
+res.bulk.gene<-results(dds.bulk.gene,contrast = c('condition','Control','Endometriosis'))
 
 res.tissue.gene<-results(dds.bulk.tissue,contrast = c('tissue','Endometrium','Peritoneum'))
+
 
 res.tissue.gene$diffexpressed <- "NO"
 res.tissue.gene$diffexpressed[res.tissue.gene$log2FoldChange > cut_lfc & res.tissue.gene$padj < cut_pvalue] <- "UP"
@@ -5974,6 +6033,9 @@ ggplot(data=data.frame(res.bulk.gene), aes(x=log2FoldChange, y=-log10(padj), col
   geom_hline(yintercept=-log10(cut_pvalue), col="red")#+
   geom_text_repel(aes(label= ifelse(res.bulk.gene$diffexpressed!='None',rownames(res.bulk.gene),'')),color='black')
 
+write.csv(buf,'svg.csv')
+
+
 library(ggplot2)
 library(ggpubr)
 library(ggrepel)
@@ -5989,7 +6051,7 @@ gn.selected<-res.bulk.gene$log2FoldChange>cut_lfc & res.bulk.gene$padj<cut_pvalu
 buf3<-rownames(res.bulk.gene)[!is.na(gn.selected) & gn.selected]
 for (i in buf4[buf4 %in% buf1]){show(i)}
 
-library(ggVennDiagram)
+
 ggVennDiagram(list(control_p=buf3,control_n=buf4, endometriosis_p=buf1, endometriosis_n=buf2))
 
 
@@ -6683,10 +6745,10 @@ p1+p2+p3
 
 value<-'Gravidity' #Gravidity Parity
 p1<-ggplot(buf,aes(x=B.cereus, y=get(value),fill=B.cereus,color=B.cereus))+geom_violin()+theme_pubr(legend='none')+labs(x='Histopathologic score',y=value)+
-  scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
+  #scale_fill_manual(values = paste0(Color2,'99'))+scale_color_manual(values = Color2)+
   theme(text=element_text(family='arial',size=12))
 p2<-ggplot(buf,aes(x=group, y=get(value), fill=group, color=group))+geom_violin()+theme_pubr(legend='none')+labs(y=value)+
-  scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
+  #scale_fill_manual(values = paste0(Color4,'99'))+scale_color_manual(values = Color4)+
   theme(text=element_text(family='arial',size=12))+stat_compare_means(label='p')
 
 p1+p2
@@ -6808,7 +6870,7 @@ for (i in dc.table$Celltype_Source_ID...of.genes){
 dc_type<-'cDC' # none, a, c, i, p
 dc_list<-dc.marker[names(dc.marker)[startsWith(names(dc.marker),dc_type)]]
 
-library(ggvenn)
+
 ggvenn(dc_list[c('cDC_HPCA_1','cDC_HPCA_2','cDC_HPCA_3')],show_elements = T,show_percentage = F)/
 
 ggvenn(dc_list[c('cDC_NOVERSHTERN_1','cDC_NOVERSHTERN_2','cDC_NOVERSHTERN_3')],show_elements = T,show_percentage = F)
@@ -6830,12 +6892,13 @@ plotdata.antibiotic<-antibiotic.patient[antibiotic.patient$`Anti 사용여부`==
 
 plotdata.antibiotic<-melt(plotdata.antibiotic,measure.vars = c('pre-anti 통증점수','post-anti 통증점수'))
 plotdata.antibiotic$variable<-ifelse(plotdata.antibiotic$variable=='pre-anti 통증점수','pre-anti','post-anti')
-colnames(plotdata.antibiotic)
+plotdata.antibiotic$value[plotdata.antibiotic$variable=='pre-anti']
+plotdata.antibiotic$value[plotdata.antibiotic$variable=='post-anti']
 p1<-ggpaired(plotdata.antibiotic, x = "variable", y = "value",
-         line.color = "gray", line.size = 0.4, color='variable',fill='variable')+
+         line.color = "gray", line.size = 0.4, fill='variable')+gg.default+
   stat_compare_means(paired = T,comparisons = list(c('pre-anti','post-anti')))+
-  scale_fill_manual(values=c('#ff5555aa','#5555ffaa'))+scale_color_manual(values=c('#ff5555','#5555ff'))+
-  labs(x='',y='Pain score')+theme(legend.position = 'none')
+  scale_fill_manual(values=c('#ff5555aa','#5555ffaa'))+
+  labs(y='Pain score')+theme(legend.position = 'none',axis.title.x=element_blank())
 p1
 buf1<-antibiotic.patient$`pre-anti 통증점수`
 buf2<-antibiotic.patient$`post-anti 통증점수`
@@ -6875,13 +6938,43 @@ plotdata.antibiotic2$diff.size<-plotdata.antibiotic2$`post-anti size`/plotdata.a
 plotdata.antibiotic2<-plotdata.antibiotic2[order(plotdata.antibiotic2$diff.size,decreasing = T),]
 plotdata.antibiotic2$`...1`<-factor(plotdata.antibiotic2$`...1`,levels=plotdata.antibiotic2$...1)
 plotdata.antibiotic2$`Anti 종류`<-factor(plotdata.antibiotic2$`Anti 종류`)
-
-ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size, fill='#ff5555'))+geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
+#Color2<-c('#01D11A','#FFa5a5','#FF6D6D','#FF1D1D','#CB1106')
+fill_col=c('0'='#01D11A','2'='#FFa5a5','3'='#e11','4'='#aB1106')
+colnames(plotdata.antibiotic2)
+plotdata.antibiotic2$`Histopathologic scores`
+#항생제 사이즈 변화는 여기----
+##색 똑같이
+ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size,
+                                fill=''))+
+  geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
   labs(y='Size change after antibiotic treatment (%)',x='Patients')+
-  theme(axis.text.x=element_blank(),legend.position = 'none',axis.line.x = element_blank(),axis.ticks.x=element_blank())+
+  scale_fill_manual(values='#ff5555')+
+  theme(axis.text.x=element_blank(),
+        legend.position = 'none',
+        axis.line.x = element_blank(),
+        axis.ticks.x=element_blank())+
   scale_y_continuous(breaks = c(-0.01,-0.11,-0.21,-0.31),labels =c(0,-10,-20,-30))+
   geom_hline(yintercept = -0.01,color='#444444',linetype =2)
 
+##색다르게
+ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size,
+                                fill=as.numeric(plotdata.antibiotic2$`Histopathologic scores`)))+
+  geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
+  labs(y='Size change after antibiotic treatment (%)',x='Patients')+
+  scale_fill_gradient2(high='#ff5555',low='#ffa5a5')+
+  theme(axis.text.x=element_blank(),
+        #legend.position = 'none',
+        axis.line.x = element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_y_continuous(breaks = c(-0.01,-0.11,-0.21,-0.31),labels =c(0,-10,-20,-30))+
+  geom_hline(yintercept = -0.01,color='#444444',linetype =2)+
+  labs(fill='Duration of antibiotic (Days)')
+
+ggsave('0304size_change_v2_6x5.svg',device='svg',width=12,height=10,units='cm',dpi=300)
+
+ggplot(plotdata.antibiotic2,aes(y=diff.size,x=`Anti 사용기간(day)`))+geom_point()
+lm(`Anti 사용기간(day)` ~ diff.size, data = plotdata.antibiotic2)
+cor.test(plotdata.antibiotic2$`Anti 사용기간(day)`,plotdata.antibiotic2$diff.size)
 ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size,fill=age))+geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
   scale_fill_gradient(low="red", high="gray")+
 ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size,fill=BMI))+geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
@@ -6920,17 +7013,937 @@ plotdata.antibiotic2$diff.size<-plotdata.antibiotic2$`post-anti size`/plotdata.a
 
 plotdata.antibiotic2$`Anti 종류`<-factor(plotdata.antibiotic2$`Anti 종류`)
 ggplot(plotdata.antibiotic2,aes(x=`...1`,y=diff.size,fill=age))+geom_bar(stat = "identity", position = "dodge")+theme_pubr()+
-  scale_fill_gradient(low="red", high="gray")+
+  scale_fill_gradient(low="red", high="gray")
 
 
+  
+  
 
 #size 수정----
 buf<-patient.stain[patient.stain$type=='Endometriosis','Histopathologic score']
 antibiotic.patient$`Histopathologic scores`<-buf
 antibiotic.patient$`Histopathologic scores`<-as.factor(antibiotic.patient$`Histopathologic scores`)
-ggplot(antibiotic.patient[antibiotic.patient$`Histopathologic scores`!=0,],
-       aes(x=`Histopathologic scores`,y=size,fill=`Histopathologic scores`,col=`Histopathologic scores`))+geom_boxplot()+
-  theme_pubr()+scale_color_manual(values=Color2)+scale_fill_manual(values=paste0(Color2,'aa'))+
-  theme(legend.position = 'none')
+#
+p.cohort1.size<-ggplot(antibiotic.patient[antibiotic.patient$`Histopathologic scores`!=0,],
+       aes(x=`Histopathologic scores`,y=size,fill=`Histopathologic scores`))+geom_boxplot()+
+  gg.default+scale_fill_manual(values=c('green','#FFa5a5','#FF6D6D','#FF1D1D','#CB1106'))+
+  theme(legend.position = 'none')+labs(x='B.cereus staining intensity level',y='Size')
+p.cohort1.size
 antibiotic.patient$`EMS stage`
 
+
+#comparing endometriosis gene set with b.cereus----
+
+#bacillus.corr.gene<-read.csv('bacillus_correlation_gene_table.csv',row.names = 1)
+gene.matrix<-read.csv('data/gene_count_matrix.csv',row.names = 1)
+gene.matrix<-gene.matrix[,total.data.s.filter$Run]
+
+
+
+gene.matrix<-data.frame()
+for (i in total.data.s.filter$Run){
+  buf<-read.table(paste0('/data1/endometriosis/stringtie/',i,'.txt'),sep = '\t',header = T)
+  buf$Gene.Name<-ifelse(buf$Gene.Name=='.','-',buf$Gene.Name)
+  buf$Gene<-paste0(buf$Gene.ID,'/',buf$Gene.Name)
+  buf<-buf[,c('Gene','TPM')]
+  buf<-aggregate(buf[,2],by=list(buf$Gene),FUN=sum)
+  colnames(buf)<-c('Gene',i)
+  
+  if (nrow(gene.matrix)==0){
+    gene.matrix<-buf}else{
+      gene.matrix<-merge(gene.matrix,buf,by='Gene',all=T)}
+}
+gene.matrix[nrow(gene.matrix)+1,]<-c(0,cereus.count$`Bacillus cereus`)
+gene.matrix[nrow(gene.matrix),1]<-'Bacillus cereus'
+##correlation analysis----
+buf<-gene.matrix[,-1]
+rownames(buf)<-gene.matrix$Gene
+is.na(buf)<-0
+buf<-buf[,4:10]
+buf<-buf[rowSums(buf!=0)!=0,]
+
+
+cor.result<-rcorr(t(buf),type = 'spearman')
+
+cor.df<-data.frame(gene=rownames(cor.result$r),
+                   r=cor.result$r[,'Bacillus cereus'],
+                   p=cor.result$P[,'Bacillus cereus'])
+
+cor.df<-drop_na(cor.df) #bacillus 만 pval이 na라서 사라짐
+buf<-c()
+for (i in rownames(cor.df)){
+  buf1<-strsplit(i,'/')[[1]][2]
+  if (buf1=='-'){buf1<-strsplit(i,'/')[[1]][1]}
+  buf<-c(buf,buf1)
+}
+
+cor.df$gene<-buf
+cor.df$p.snf<-ifelse(cor.df$p<0.05,'O','')
+
+write_csv(cor.df,'data/emt_geneset_corrwithcereus.csv')
+
+emt.gene<-toupper(c('srp14','hoxb9','tra2a','vezt','fgd9',
+                      'grep1','abo','esr1','syne1','gdap1',
+                      'fshb','mllt10','srp14-as1','wnt4','bsn',
+                      'ngf',
+                    'tp53','cyp17a1','cyp1a','cyp19','cyp1b1','cyp2c19','il16','il1a','il10','il12b',
+                    'cox2','hla-g','lilrb1','lilrb2','muc2','muc4','vegf','fas','tyk2','plgf','hif1a',
+                    'map3k4','kazn','lama5','linc00339','rnd3','rbm43','znf366','nfe2l3','hoxa10',
+                    'greb','ptprd','kdr','fn1', 'vti1a',
+                    'esr2','pgr','hif1a','vegfa','il1b','il6','tnfa','mmps','pi3k','akt','mtor','mapk',
+                    'erk','tgfb',
+                    'arg399','hmlh1','hoxa11','emx2','tenm1','kras','sirt1','bcl6','pten'
+                    ))
+
+buf<-cor.df[cor.df$gene%in%emt.gene,]
+
+table(buf$r>0)
+write.csv(buf,'data/emt_geneset_corrwithcereus.csv')
+
+
+
+buf$x<-factor(buf$gene,levels=buf[order(buf$r),'gene'])
+
+ggplot(buf[order(buf$r),],aes(x=x,y=r,fill=p.snf))+geom_col()+coord_flip()+gg.default+
+  theme(legend.position = 'none')+
+  scale_fill_manual(values = c('gray','red'))+scale_y_continuous(limits=c(-1,1))
+
+#pathway-----
+buf<-cor.df[cor.df$p.snf=='O',]
+buf<-buf[buf$r>0,]
+
+go.gene.list<-buf$r
+
+buf1<-c()
+for (i in rownames(buf)){
+  buf2<-strsplit(i,'/')[[1]][1]
+  buf1<-c(buf1,buf2)
+}
+buf$ensg<-buf1
+write_csv(buf,'emt_geneset_corrwithcereus.csv')
+
+names(go.gene.list)<-buf1
+gse.ensg <- gseGO(geneList=go.gene.list[order(go.gene.list,decreasing=T)], 
+                  ont ="ALL", 
+                  keyType = "ENSEMBL", 
+                  nPerm = 10000, 
+                  minGSSize = 3, 
+                  maxGSSize = 800, 
+                  pvalueCutoff = 0.05, 
+                  verbose = TRUE, 
+                  OrgDb = org.Hs.eg.db, 
+                  pAdjustMethod = "none")
+
+p.go.cereus<-dotplot(gse.ensg, showCategory=7,title='GO',split='ONTOLOGY') + facet_grid(ONTOLOGY~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
+
+ids<-bitr(names(go.gene.list), fromType = "ENSEMBL", toType = "ENTREZID", OrgDb=org.Hs.eg.db)
+
+kegg.gene.list<-go.gene.list[ids$ENSEMBL]
+names(kegg.gene.list)<-ids$ENTREZID
+
+buf<-aggregate(kegg.gene.list,list(names(kegg.gene.list)),mean)
+kegg.gene.list<-buf$x
+names(kegg.gene.list)<-buf$Group.1
+kegg <- gseKEGG(geneList     = kegg.gene.list[order(kegg.gene.list,decreasing=T)],
+                organism     = 'hsa',
+                nPerm        = 10000,
+                minGSSize    = 3,
+                maxGSSize    = 800,
+                pvalueCutoff = 0.05,
+                pAdjustMethod = "none",
+                keyType       = "ncbi-geneid")
+
+
+#adhesion, 통증, migration, emt
+#이중 핵심적인 걸로 network analysis로 핵심적인 유전자를 찾아야한다.
+
+
+p.kegg.cereus<-dotplot(kegg, showCategory=7,title='KEGG') + facet_grid(.~.sign, scale="free")+scale_fill_gradient(low='red',high='#ffafaf') + theme(axis.text.y=element_text(size=10),text = element_text(family = 'serif'))
+
+p.go.cereus+p.kegg.cereus
+
+#maker gene of m1, m2, cytokine====
+buf<-cor.df[str_detect(cor.df$gene,'IB'),]
+buf<-cor.df[startsWith(cor.df$gene,'IL'),]
+
+#m2
+##marker
+buf1<-cor.df[cor.df$gene %in% c('CD163','CD206','MRC1','ARG1','IL10','CHI3L1',
+                                'YKL-40','YKL40','TGFβ1','TGFB1'),]
+##cytokine
+buf2<-cor.df[cor.df$gene %in% c('IL10','IL10RA','IL10RB','TGFB1','TGFBR1','TGFB3','TGFBI','TGFBRAP1','TGFB1I1','TGFBR2','TGFB3-AS1','TGFB2-OT1'),]
+
+#m1
+##marker
+buf3<-cor.df[cor.df$gene %in% c('NOS2','INOS','CD86','CD80','IL1B','TNF','CXCL9','CXCL10'),]
+##cytokine
+buf4<-cor.df[cor.df$gene %in% c('IL6R','IL6R-AS1','IL6ST','IL6STP1','IL12RB2','TNFAIP1','TNFAIP3',
+                                'TNFAIP8','TNFAIP8L2','TNFAIP8L3','TNFAIP2','TNFAIP8L1'),]
+
+#gene corr valulized----
+##adhesion----
+enrn.adhesion.node<-data.frame(gene='',type='')[-1,]
+buf<-read.table('enrichnet/network392_node_attributes.nda',sep='\t',header = T)
+for (i in buf$NodeType){
+  j<-strsplit(i,' = ')[[1]]
+  enrn.adhesion.node[nrow(enrn.adhesion.node)+1,]<-j
+}
+
+enrn.adhesion.edge<-data.frame(gene1='',gene2='')[-1,]
+buf<-read.table('enrichnet/network392.lst',sep='*')
+for (i in buf$V1){
+  j<-strsplit(i,' ')[[1]]
+  if (length(j)==2){enrn.adhesion.edge[nrow(enrn.adhesion.edge)+1,]<-j}
+  else{enrn.adhesion.edge[nrow(enrn.adhesion.edge)+1,]<-c(j,j)}
+}
+
+buf<-enrn.adhesion.edge[enrn.adhesion.edge$gene1!=enrn.adhesion.edge$gene2,]
+buf<-unique(c(buf$gene1,buf$gene2))
+enrn.adhesion.related<-enrn.adhesion.node[enrn.adhesion.node$gene%in%buf,]
+
+##migration----
+enrn.migration.node<-data.frame(gene='',type='')[-1,]
+buf<-read.table('enrichnet/network227_node_attributes.nda',sep='\t',header = T)
+for (i in buf$NodeType){
+  j<-strsplit(i,' = ')[[1]]
+  enrn.migration.node[nrow(enrn.migration.node)+1,]<-j
+}
+
+enrn.migration.edge<-data.frame(gene1='',gene2='')[-1,]
+buf<-read.table('enrichnet/network227.lst',sep='*')
+for (i in buf$V1){
+  j<-strsplit(i,' ')[[1]]
+  if (length(j)==2){enrn.migration.edge[nrow(enrn.migration.edge)+1,]<-j}
+  else{enrn.migration.edge[nrow(enrn.migration.edge)+1,]<-c(j,j)}
+}
+
+buf<-enrn.migration.edge[enrn.migration.edge$gene1!=enrn.migration.edge$gene2,]
+buf<-unique(c(buf$gene1,buf$gene2))
+enrn.migration.related<-enrn.migration.node[enrn.migration.node$gene%in%buf,]
+
+##transition----
+enrn.transition.node<-data.frame(gene='',type='')[-1,]
+buf<-read.table('enrichnet/network372_node_attributes.nda',sep='\t',header = T)
+for (i in buf$NodeType){
+  j<-strsplit(i,' = ')[[1]]
+  enrn.transition.node[nrow(enrn.transition.node)+1,]<-j
+}
+
+enrn.transition.edge<-data.frame(gene1='',gene2='')[-1,]
+buf<-read.table('enrichnet/network372.lst',sep='*')
+for (i in buf$V1){
+  j<-strsplit(i,' ')[[1]]
+  if (length(j)==2){enrn.transition.edge[nrow(enrn.transition.edge)+1,]<-j}
+  else{enrn.transition.edge[nrow(enrn.transition.edge)+1,]<-c(j,j)}
+}
+
+buf<-enrn.transition.edge[enrn.transition.edge$gene1!=enrn.transition.edge$gene2,]
+buf<-unique(c(buf$gene1,buf$gene2))
+enrn.transition.related<-enrn.transition.node[enrn.transition.node$gene%in%buf,]
+
+##pain----
+enrn.pain.node<-data.frame(gene='',type='')[-1,]
+buf<-read.table('enrichnet/network477_node_attributes.nda',sep='\t',header = T)
+for (i in buf$NodeType){
+  j<-strsplit(i,' = ')[[1]]
+  enrn.pain.node[nrow(enrn.pain.node)+1,]<-j
+}
+
+enrn.pain.edge<-data.frame(gene1='',gene2='')[-1,]
+buf<-read.table('enrichnet/network477.lst',sep='*')
+for (i in buf$V1){
+  j<-strsplit(i,' ')[[1]]
+  if (length(j)==2){enrn.pain.edge[nrow(enrn.pain.edge)+1,]<-j}
+  else{enrn.pain.edge[nrow(enrn.pain.edge)+1,]<-c(j,j)}
+}
+
+buf<-enrn.pain.edge[enrn.pain.edge$gene1!=enrn.pain.edge$gene2,]
+buf<-unique(c(buf$gene1,buf$gene2))
+enrn.pain.related<-enrn.pain.node[enrn.pain.node$gene%in%buf,]
+
+
+table(enrn.adhesion.related$type)/table(enrn.adhesion.node$type)
+table(enrn.migration.related$type)/table(enrn.migration.node$type)
+table(enrn.transition.related$type)/table(enrn.transition.node$type)
+table(enrn.pain.related$type)/table(enrn.pain.node$type)
+
+
+#GENE ONTOLOGY.PPT
+##adhesion   geneset:159/228(69.74%) pathway:387/451(85.81%) overlap:14/14
+##migration  geneset:123/228(53.95%) pathway:43/56(76.79%)   overlap:2/3
+##transition geneset:118/228(51.75%) pathway:26/30(86.67%)   overlap:1/1
+##pain       geneset:118/228(51.75%) pathway:37/44(84.09%)   overlap:1/1
+
+#pheatmap----
+geneset.adhesion<-enrn.adhesion.related[enrn.adhesion.related$type!='geneset','gene']
+geneset.migration<-enrn.migration.related[enrn.migration.related$type!='geneset','gene']
+geneset.transition<-enrn.transition.related[enrn.transition.related$type!='geneset','gene']
+geneset.pain<-enrn.pain.related[enrn.pain.related$type!='geneset','gene']
+
+geneset.overlap<-c(enrn.adhesion.related[enrn.adhesion.related$type=='overlap','gene'],
+                   enrn.migration.related[enrn.migration.related$type=='overlap','gene'],
+                   enrn.transition.related[enrn.transition.related$type=='overlap','gene'],
+                   enrn.pain.related[enrn.pain.related$type=='overlap','gene'])
+#중복 확인인
+length(enrn.adhesion.related[enrn.adhesion.related$type=='overlap','gene'])
+length(enrn.migration.related[enrn.migration.related$type=='overlap','gene'])
+length(enrn.transition.related[enrn.transition.related$type=='overlap','gene'])
+length(enrn.pain.related[enrn.pain.related$type=='overlap','gene'])
+length(geneset.overlap)
+
+geneset.total<-unique(c(geneset.adhesion,geneset.migration,geneset.transition,geneset.pain))
+library(pheatmap)
+
+#gene.fpkm<-read.csv('/data1/endometriosis/data/gene_count_matrix.csv')
+buf<-read.csv('/data1/endometriosis/data/gene_count_matrix.csv')
+buf<-buf[buf$gene_id!="<class 'str'>",c('gene_id',colnames(gene.matrix)[2:11])]
+
+gene.name<-data.frame(gene_id=buf$gene_id)
+gene.name$gene<-''
+gene.name$ensg<-''
+j=1
+for (i in buf$gene_id){
+  buf1<-strsplit(i,'[|]')[[1]]
+  gene.name[gene.name$gene_id==i,'ensg']<-buf1[1]
+  gene.name[gene.name$gene_id==i,'gene']<-buf1[length(buf1)]
+  j=j+1
+}
+
+buf[,1]<-gene.name$ensg
+buf$Gene<-gene.name$gene
+an.label<-data.frame(group=c(rep('Control',3),rep('Patient',7)))
+rownames(an.label)<-colnames(buf[2:11])
+
+an.col<-list(group=c('Control'='blue','Patient'='red'))
+
+buf<-buf[-42936,] #중복 제거
+buf1<-buf[buf$Gene%in%c(geneset.adhesion,geneset.migration,geneset.transition,geneset.pain),]
+buf1<-buf[buf$Gene%in%geneset.adhesion,]
+buf1<-buf[buf$Gene%in%geneset.migration,]
+buf1<-buf[buf$Gene%in%geneset.transition,]
+buf1<-buf[buf$Gene%in%geneset.pain,]
+buf1<-buf[buf$Gene%in%geneset.overlap,]
+#a<-order(rowSums(buf[2:11]),decreasing = T)[1:100]
+rownames(buf1)<-buf1$Gene
+#buf1<-buf1[rowSums(buf1[,2:11]!=0)>4,]
+buf1[,2:11]<-t(scale(t(buf1[,2:11])))
+buf1<-buf1[rowSums(is.na(buf1))==0,]
+
+an.low<-list('geneset'=c('adhesion'='#d68','migration'='#8c6','transition'='#359','pain'='#858'))
+an.low.label<-data.frame(geneset=buf1$Gene)
+rownames(an.low.label)<-buf1$Gene
+an.low.label$geneset<-ifelse(an.low.label$geneset%in%geneset.adhesion,'adhesion',
+                             ifelse(an.low.label$geneset%in%geneset.migration,'migration',
+                             ifelse(an.low.label$geneset%in%geneset.transition,'transition',
+                             ifelse(an.low.label$geneset%in%geneset.pain,'pain',''))))
+
+
+pheatmap(
+  mat               = buf1[,2:11],
+  border_color      = NA,
+  show_colnames     = T,  show_rownames = T,
+  annotation_col    = an.label,
+  annotation_colors = an.col,
+  annotation_row = an.low.label,
+  cluster_cols      = F,cluster_rows = T,
+  drop_levels       = T,
+  fontsize          = 12,
+  width             = 2
+)
+
+library("DESeq2")
+#dds <- DESeqDataSet(t(gene.count), design = )
+rownames(buf)<-buf$gene_id
+a<-data.frame(group=c(rep('Control',3),rep('Patient',7)))
+ddsMat <- DESeqDataSetFromMatrix(countData = buf[,2:11],
+                                 colData = a,
+                                 design = ~ group)
+
+dds<-estimateSizeFactors(ddsMat)
+rld <- rlog(dds, blind=FALSE)
+plotSparsity(dds)
+#dds <- estimateSizeFactors(dds)
+plot(log2(counts(dds, normalized=TRUE)[,1:2] + 1),
+     pch=16, cex=0.3)
+plot(assay(rld)[,1:2],
+     pch=16, cex=0.3)
+
+
+#sample distance
+sampleDists <- dist( t( assay(rld) ) )
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- NULL
+colnames(sampleDistMatrix) <- colnames(gene.count)
+#colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         annotation_col =  an.label,
+         annotation_colors = an.col,
+         cluster_cols      = F,
+         cluster_rows = F)
+
+
+dds <- DESeq(dds)
+res <- results(dds)
+mcols(res, use.names=TRUE)
+summary(res)
+
+topGene <- rownames(res)[which.min(res$padj)]
+plotCounts(dds, gene=topGene, intgroup=c("group"))
+
+plotMA(res, ylim=c(-5,5))
+
+gene.name[gene.name$gene%in%geneset.overlap,'ensg'] %in% rownames(mat)
+dim(mat)
+mat <- assay(rld)[gene.name[gene.name$gene%in%geneset.overlap,'ensg'],]
+mat <- assay(rld)[gene.name[gene.name$gene%in%geneset.total,'ensg'],]
+mat <- mat - rowMeans(mat)
+buf<-c()
+for (i in rownames(mat)){buf<-c(buf,gene.name[gene.name$ensg==i,'gene'])}
+rownames(mat)<-buf
+df <- as.data.frame(colData(rld)[,'group'])
+pheatmap(mat,
+         cluster_cols = F,
+          border_color = NA,
+          annotation_col = an.label,
+         annotation_colors = an.col)
+
+gene.count
+
+#making gene.tpm table----
+gene.tpm.first<-data.frame()
+##4gene matrix (tpm)====
+for (i in list.files('/data1/endometriosis/stringtie')){
+  if (endsWith(i,'txt') & startsWith(i,'SRR')){
+    buf<-read.table(paste0('/data1/endometriosis/stringtie/',i),sep='\t',header = T)
+    buf$gene<-paste0(buf$Gene.ID,'/',buf$Gene.Name)
+    buf<-buf[,c('gene','TPM')]
+    buf1<-strsplit(i,'[.]')[[1]][1]
+    colnames(buf)<-c('gene',buf1)
+    if (sum(dim(gene.tpm.first))==0){
+      gene.tpm.first <- buf
+    }
+    else{gene.tpm.first<-merge(gene.tpm.first,buf,by='gene',all=T)}
+  }
+  
+}
+gene.tpm.first$hgnc<-gene.tpm.first$gene
+gene.tpm.first$ensg<-gene.tpm.first$gene
+for (i in 1:length(gene.tpm.first$hgnc)){
+  gene.tpm.first[i,'hgnc']<-unlist(strsplit(gene.tpm.first[i,'gene'],'/'))[2]
+  gene.tpm.first[i,'ensg']<-unlist(strsplit(gene.tpm.first[i,'gene'],'/'))[1]
+}
+
+##4gene matrix (fpkm)====
+gene.fpkm.first<-data.frame()
+for (i in list.files('/data1/endometriosis/stringtie')){
+  if (endsWith(i,'txt') & startsWith(i,'SRR')){
+    buf<-read.table(paste0('/data1/endometriosis/stringtie/',i),sep='\t',header = T)
+    buf$gene<-paste0(buf$Gene.ID,'/',buf$Gene.Name)
+    buf<-buf[,c('gene','FPKM')]
+    buf1<-strsplit(i,'[.]')[[1]][1]
+    colnames(buf)<-c('gene',buf1)
+    if (sum(dim(gene.fpkm.first))==0){
+      gene.fpkm.first <- buf
+    }
+    else{gene.fpkm.first<-merge(gene.fpkm.first,buf,by='gene',all=T)}
+  }
+  
+}
+gene.fpkm.first
+gene.fpkm.first$hgnc<-gene.fpkm.first$gene
+gene.fpkm.first$ensg<-gene.fpkm.first$gene
+for (i in 1:length(gene.fpkm.first$hgnc)){
+  gene.fpkm.first[i,'hgnc']<-unlist(strsplit(gene.fpkm.first[i,'gene'],'/'))[2]
+  gene.fpkm.first[i,'ensg']<-unlist(strsplit(gene.fpkm.first[i,'gene'],'/'))[1]
+}
+
+
+
+buf<-gene.fpkm.first[,c('gene',total.data.s.filter$Run,'hgnc','ensg')]
+
+buf1<-melt(buf[buf$hgnc=='PTGS2',],id.vars=c('gene','hgnc','ensg'))
+table(total.data.s.filter$Run==buf1$variable) # 순서 일치 확인
+buf1$type<-total.data.s.filter$condition
+ggplot(buf1,aes(x=type,y=value))+geom_boxplot()+stat_compare_means()
+
+cor.df.gene.filter[cor.df.gene.filter$x=='JUN',]
+buf<-gene.matrix[,-1]
+rownames(buf)<-gene.matrix$Gene
+is.na(buf)<-0
+buf<-buf[,4:10]
+buf<-buf[rowSums(buf!=0)!=0,]
+
+b<-bitr(unlist(strsplit(kegg.positive@result$core_enrichment,'/')), 
+        fromType = "ENTREZID", toType   = "SYMBOL",  OrgDb    = org.Hs.eg.db)
+buf<-gene.fpkm.first[gene.fpkm.first$hgnc%in%b$SYMBOL,]
+buf<-buf[,c('gene',total.data.s.filter$Run,'hgnc','ensg')]
+buf[nrow(buf)+1,]<-c('gene',total.data.s.filter$`Bacteria_s_Bacillus cereus`
+                     ,'Bacillus cereus','Bacillus cereus')
+buf<-buf[,c('gene',total.data.s.filter$Run[total.data.s.filter$condition!='Control'],'hgnc','ensg')]
+colnames(buf)
+b<-data.frame(as.numeric(t(buf[1,2:8])))
+colnames(b)<-buf$hgnc[1]
+for (i in 1:33){
+  b[,buf$hgnc[i]]<-as.numeric(c(t(buf[i,2:8])))
+}
+
+b<-melt(b,id.vars='Bacillus cereus')
+ggplot(b,aes(x=`Bacillus cereus`,y=value))+geom_point()+gg.default+
+  facet_wrap(~variable,scale='free')+
+  geom_smooth(method = "lm", se = TRUE)
+
+#gene corr df가 이상해서 다시 처음부터 해야할거 같음----
+##1 gene matrix로 부터 deg 수행----
+buf<-read.csv('/data1/endometriosis/data/gene_count_matrix.csv')
+colnames(buf)
+buf<-buf[,c('gene_id',total.data.s.filter$Run)]
+buf$ensg<-buf$gene_id
+buf$hgnc<-buf$gene_id
+dds.first<-DESeqDataSetFromMatrix(countData = buf[,2:11], 
+                                  colData = total.data.s.filter, 
+                                  design = ~ condition)
+dds.first<-DESeq(dds.first)
+
+dds.first<-DESeq(dds.first)
+res.first<-results(dds.first)
+res.first$gene<-buf$gene_id
+
+colnames(res.first)
+res.first$`logp`<-(log2(res.first$padj))
+res.first$sig<-ifelse(res.first$padj<0.05,'sig','not')
+res.first$sig[is.na(res.first$sig)]<-'not'
+res.first$label<-ifelse(res.first$hgnc%in%c('PROK1','FAIM2','LDB3','AQP11','AKR1C2',
+                                            'SOX6','MIR202HG'),res.first$hgnc,NA)
+res.first$label<-ifelse(res.first$hgnc%in%c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+                                            'MIR202HG','ITGBL1'),res.first$hgnc,NA)
+#res.first[res.first$hgnc %in% c('SOX6','MIR202HG'),]
+#유전자 labeling 버젼
+ggplot(res.first,aes(x=log2FoldChange,y=-logp,col=sig))+geom_point()+gg.default+
+  scale_color_manual(values=c('sig'='red','not'='gray'))+
+  geom_text_repel(aes(label=res.first$label),seed=4232,color='black')+
+  theme(legend.position = 'none')+labs(y='-LogP')
+#유전자 labeling 없는 버젼
+ggplot(res.first,aes(x=log2FoldChange,y=-logp,col=sig))+geom_point()+gg.default+
+  scale_color_manual(values=c('sig'='red','not'='gray'))+
+  theme(legend.position = 'none')+labs(y='-LogP')
+
+res.first$ensg<-res.first$gene
+res.first$hgnc<-res.first$gene
+for (i in 1:nrow(res.first)){
+  res.first[i,'ensg']<-unlist(strsplit(res.first[i,'gene'],'[|]'))[1]
+  res.first[i,'hgnc']<-unlist(strsplit(res.first[i,'gene'],'[|]'))[2]
+}
+
+tof<-res.first$padj<0.05
+tof[is.na(tof)]<-F
+res.first.genelist<-res.first[tof,'log2FoldChange']
+names(res.first.genelist)<-res.first[tof,'gene']
+res.first.genelist
+
+table(res.first[res.first$sig=='sig','log2FoldChange']>0)
+##2 b.cereus와 correlation을 보이는 gene listup----
+
+# vst: 분산을 평균과 독립적으로 만들어 클러스터링/pca에 적합한 형태로 바꾸어줌
+vst.first<-vst(dds.first,blind = FALSE)
+vst.first.mat<-data.frame(assay(vst.first))
+vst.first.mat<-vst.first.mat[tof,]
+#b.cereus적용전 순서 일치 확인
+total.data.s.filter$Run==colnames(vst.first.mat)
+vst.first.mat[nrow(vst.first.mat)+1,]<-total.data.s.filter$`Bacteria_s_Bacillus cereus`
+vst.first.mat[1]
+cor.result.first <- rcorr(t(vst.first.mat),type = 'spearman')
+cor.result.first$r
+cor.df.first<-data.frame(r=cor.result.first$r[,157],
+                   p=cor.result.first$P[,157],
+                   gene=c(res.first[tof,'gene'],'Bacillus cereus'))
+cor.df.first$ensg<-cor.df.first$gene
+cor.df.first$hgnc<-cor.df.first$gene
+for (i in 1:nrow(cor.df.first)){
+  buf<-unlist(strsplit(cor.df.first$gene[i],'[|]'))
+  if (length(buf)==2){
+      cor.df.first$ensg[i]<-buf[1]
+      cor.df.first$hgnc[i]<-buf[2]
+  }
+}
+cor.result.first
+'0702_sizechange_529x302.svg'
+'0705_pain_box_227x302.svg'
+'0706_infertility_378x302.svg'
+'0707_size_box_378x302.svg'
+### 2-1 b.cereus correlation plot 만들기----
+buf<-cor.df.first[-nrow(cor.df.first),]
+buf$logp<-log2(buf$p)
+buf$sig<-ifelse(buf$p<0.05,'sig','')
+buf$label<-ifelse(buf$sig=='sig',buf$hgnc,NA)
+buf$label<-ifelse(startsWith(buf$label,'ENSG'),NA,buf$label)
+
+buf$label<-ifelse(buf$hgnc %in% c('KLF2','HOXB6','AEBP1','RORB','NGF','GDAP1','ESR1',
+                                  'FSHB','BMF','WNT4','IL1A',
+                                  'PGR', 'OLFM4', 'PIP5K1B', 'CCNA1', 'BRIP1', 'CADM1', 'PRAME','GCNT1'
+                                  ),buf$hgnc,NA)
+buf$label<-ifelse(buf$hgnc %in% c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+                                  'MIR202HG','ITGBL1'),buf$hgnc,NA)
+
+ggplot(buf,aes(x=r,y=-logp,col=sig))+geom_point()+gg.default+
+  scale_color_manual(values=c('sig'='red','not'='gray'))+
+  theme(legend.position = 'none')+labs(y='-Log2P')+
+  geom_text_repel(aes(label=buf$label),max.overlaps = 20,col='black')
+
+
+table(buf$sig)
+
+
+
+##3 b.cereus와 상관관계가 있는 gene으로 go and kegg----
+###3-1 b.cereus와 상관관계가 있는 gene으로 go----
+buf<-cor.df.first#[cor.df.first$p<0.05,]
+buf<-buf[!is.na(buf[,1]),]
+buf<-buf[order(buf$r,decreasing = T),]
+buf<-buf[!startsWith(buf$hgnc,'ENSG'),]
+buf$hgnc
+go.gene.first<-buf$r
+names(go.gene.first)<-buf$hgnc
+#dim(cor.df.first)
+gse.first<-gseGO(geneList=go.gene.first, 
+                    ont ="ALL", 
+                    keyType = "SYMBOL", 
+                    nPerm = 1000, 
+                    minGSSize = 3, 
+                    maxGSSize = 15, 
+                    pvalueCutoff = 0.05, 
+                    verbose = TRUE, 
+                    OrgDb = org.Hs.eg.db, 
+                    pAdjustMethod = "none",
+                    scoreType='pos' #모든 유전자 값이 양수이면 pos, 혼합이면 std
+                 ) 
+p.go.first<-dotplot(gse.first, showCategory=17,title='GO',split='ONTOLOGY') + gg.default+
+  facet_grid(ONTOLOGY~.sign, scale="free",space='free')+
+  scale_fill_gradient(low='red',high='#ffafaf')+
+  theme(legend.position = 'none')
+p.go.first
+gse.first@result$Description
+gse.first@result$core_enrichment
+cor.df.first[cor.df.first$hgnc%in%unlist(strsplit(gse.first@result$core_enrichment[9],'/')),]
+res.first[res.first$hgnc%in%unlist(strsplit(gse.first@result$core_enrichment[9],'/')),]
+
+
+###3-2 b.cereus와 상관관계가 있는 gene으로 kegg----
+buf<-bitr(names(go.gene.first), fromType = "SYMBOL", toType   = "ENTREZID",  OrgDb    = org.Hs.eg.db)
+kegg.gene.first<-go.gene.first
+names(kegg.gene.first)<-buf$ENTREZID
+
+kegg.first <- gseKEGG(geneList     = kegg.gene.first,
+                         organism     = 'hsa',
+                         nPerm        = 1000,
+                         minGSSize    = 1,
+                         maxGSSize    = 100,
+                         pvalueCutoff = 0.05,
+                         pAdjustMethod = "none",
+                         keyType       = "ncbi-geneid",
+                         by = 'DOSE')
+
+p.kegg.first<-dotplot(kegg.first, showCategory=20,title='KEGG') + gg.default +
+  facet_grid(.~.sign, scale="free")+
+  scale_fill_gradient(low='red',high='#ffafaf')+
+  theme(legend.position = 'none')
+
+p.kegg.first@data$core_enrichment
+kegg.gene.first
+# plot만들기
+buf<-data.frame(Description=gse.first@result$Description,Enrichment=gse.first@result$enrichmentScore)
+buf$method='GO'
+buf1<-data.frame(Description=kegg.first@result$Description,Enrichment=kegg.first@result$enrichmentScore)
+buf1$method='KEGG'
+buf<-rbind(buf,buf1)
+buf$Description_2line<-c("anatomical structure formation\ninvolved in morphogenesis",
+                         "anatomical structure\ndevelopment", 'MAPK signaling pathway')
+
+ggplot(buf,aes(x=Description_2line,y=Enrichment,fill='a'))+geom_bar(stat='identity')+
+  gg.default+scale_fill_manual(values='#E0706A')+
+  facet_wrap(~method,scales='free_x',space='free_x',strip.position = "top")+
+  theme(legend.position = 'none',
+        axis.title.x=element_blank(),
+        axis.text.x = element_text(angle = 90,hjust=1,vjust = 0.5))
+### 3-3 go에서 관련있었던 gene 5개에 대한 실제 발현량 플롯만들기----
+gene.list<-unlist(strsplit(gse.first@result$core_enrichment[2],'/'))
+gene.factor<-factor(gene.list)
+buf<-c(unlist(strsplit(gse.first@result$core_enrichment[2],'/')),'CACNB2','NTF3') #go + kegg
+buf<-c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+  'MIR202HG','ITGBL1')
+buf<-melt(gene.tpm.first[gene.tpm.first$hgnc%in%buf,c('hgnc',total.data.s.filter$Run)],
+          id.vars='hgnc')
+buf$type<-ifelse(buf$variable%in%total.data.s.filter[total.data.s.filter$condition=='Control','Run'],
+       'Control','Endometriosis')
+buf$hgnc<-factor(buf$hgnc,levels=c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+                                   'MIR202HG','ITGBL1'))
+buf$hgnc<-factor(buf$hgnc,levels=c('MIR202HG','NTF3','FAIM2','PROK1','AGAP2-AS1',
+                                   'DLK1','ITGBL1'))
+ggplot(buf,aes(x=type,y=value,fill=type,col=type))+geom_boxplot()+gg.default+
+  facet_wrap(~hgnc,scale='free',nrow=1)+
+  stat_compare_means(comparisons = list(c('Control','Endometriosis')),label.y.npc = 1)+
+  scale_color_manual(values=Color)+scale_fill_manual(values=Color1)+
+  theme(axis.ticks.x=element_blank(),axis.text.x=element_blank(),
+        axis.title.x=element_blank())+
+  labs(y='TPM',fill='',col='')
+
+ggplot(buf,aes(x=type,y=value,fill=type,col=type))+geom_boxplot()+gg.default+
+  facet_wrap(~hgnc,scale='free',nrow=1)+
+  stat_compare_means(aes(label = paste0("p= ", after_stat(p.format))),
+                     size=3,label.y.npc = 0.9,label.x.npc=0)+
+  scale_color_manual(values=Color)+scale_fill_manual(values=Color1)+
+  theme(axis.ticks.x=element_blank(),axis.text.x=element_blank(),
+        axis.title.x=element_blank())+
+  labs(y='TPM',fill='',col='')
+
+
+Color=c('Control'='#01D11A','Endometriosis'='#CB1106')
+Color1=c('Control'='#01D11A99','Endometriosis'='#CB110699')
+
+buf<-vst.first.mat
+buf$hgnc<-cor.df.first$hgnc
+buf<-buf[buf$hgnc%in%c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+                       'MIR202HG','ITGBL1','Bacillus cereus'),]
+buf1<-buf$hgnc
+buf<-data.frame(t(buf[,1:10]))
+colnames(buf)<-buf1
+buf1<-melt(buf,id.vars = 'Bacillus cereus')
+buf1$variable<-factor(buf1$variable,levels=c('FAIM2','NTF3','AGAP2-AS1','DLK1','PROK1',
+                                             'MIR202HG','ITGBL1'))
+ggplot(buf1,aes(x=`Bacillus cereus`,y=value))+geom_point()+gg.default+
+  facet_wrap(~variable,scale='free',nrow=1)+
+  geom_smooth(method = "lm", se = TRUE,colour = 'red')+
+  theme(axis.text=element_blank(),axis.ticks=element_blank())+
+  labs(y='Gene Expression (VST)')
+
+cor(buf)[6,]
+cor.test(buf$PROK1,buf$`Bacillus cereus`) # p = 0.005 / r = 0.8049
+cor.test(buf$AKR1C2,buf$`Bacillus cereus`) # p = 0.005 / r = 0.8010
+cor.test(buf$LDB3,buf$`Bacillus cereus`) # p = 0.006 / r = 0.7934
+cor.test(buf$AQP11,buf$`Bacillus cereus`) # p = 0.005 / r = 0.8095
+cor.test(buf$FAIM2,buf$`Bacillus cereus`) # p = 0.005 / r = 0.8015
+
+gse.first@result$core_enrichment
+
+
+# 4 macrophage와 연관성을 찾기위한 immune 분석----
+buf<-melt(immune.filter.xcell,
+          measure.vars = colnames(immune.filter.xcell)[12:51])
+buf<-melt(immune.filter.epic,
+          measure.vars = colnames(immune.filter.epic)[12:ncol(immune.filter.epic)])
+ggplot(buf[buf$variable=='Macrophage',],aes(x=condition,y=value,fill=condition))+
+  geom_boxplot()+gg.default+
+  scale_fill_manual(values=c('gray','#d00'))+
+  stat_compare_means()+
+  labs(fill='')
+
+ggplot(immune.filter.epic,aes(x=`Macrophage`,y=`Bacteria_s_Bacillus cereus`))+geom_point()
+colnames(immune.filter.timer)
+
+ggplot(corr.df[corr.df$method=='epic',],aes(x=r,y=Y))+geom_bar(stat='identity')
+corr.df[corr.df$Y=='Cancer associated fibroblast',]
+
+# 5 각종 geneset마다 heatmap 분석-----
+library(pheatmap)
+geneset.gsea.adhesion<-c('ACVRL1','ALX1','AMIGO1','AMIGO2','AMIGO3','ANXA9','APOA4','ATP2C1','B4GALNT2','BCL10','BMP1','CADM1','CADM3','CALCA','CD164','CD209','CD34','CD47','CD84','CD93','CDH13','CDH5','CDK5R1','CDKN2A','CDSN','CELSR1','CERCAM','CLDN1','CLDN10','CLDN11','CLDN12','CLDN14','CLDN15','CLDN16','CLDN17','CLDN18','CLDN19','CLDN2','CLDN20','CLDN22','CLDN23','CLDN3','CLDN4','CLDN5','CLDN6','CLDN7','CLDN8','CLDN9','CNTN4','COL11A1','COL13A1','CRNN','CTNNA3','CX3CL1','CYFIP2','DLG1','EGFR','EMCN','GTPBP4','ITGB1','ITGBL1','ITGB2','LGALS7','LMO4','MGP','MPZL2','NCAM2','NF2','NINJ2','NLGN1','NPTN','PKD1','PKHD1','PTEN','PVRL1','PVRL2','PVRL3','RASA1','REG3A','ROBO1','ROBO2','SIRPG','SYK','THY1','TNF','TRO','VANGL2')
+geneset.gsea.migration<-c('ABI3','ACVRL1','ALOX15B','AMOT','ANGPTL3','BCAR1','BMP10','CDH13','CENTD3','CLIC4','EGFR','GTPBP4','LAMB1','MIA3','NEXN','NF1','NF2','PARD6B','PLG','PTEN','RTN4','SHH','SPHK1','TBX5','TDGF1','THY1','TRIP6','VCL')
+geneset.gsea.angiogenesis<-c('ACVRL1','AGGF1','AMOT','ANG','ANGPTL3','ANGPTL4','ATPIF1','BTG1','C1GALT1','CANX','CDH13','CHRNA7','COL4A2','COL4A3','EGF','EMCN','EPGN','ERAP1','FOXO4','HTATIP2','IL17F','IL18','IL8','MYH9','NCL','NF1','NOTCH4','NPPB','NPR1','PF4','PLG','PML','PROK2','RHOB','RNH1','ROBO4','RUNX1','SCG2','SERPINF1','SHH','SPHK1','SPINK5','STAB1','TGFB2','THY1','TNFSF12','TNNI3','VEGFA')
+
+mat <- assay(rld)[gene.name[gene.name$gene%in%geneset.gsea.adhesion,'ensg'],]
+mat <- assay(rld)[gene.name[gene.name$gene%in%geneset.gsea.migration,'ensg'],]
+mat <- assay(rld)[gene.name[gene.name$gene%in%geneset.gsea.angiogenesis,'ensg'],]
+
+mat <- mat - rowMeans(mat)
+mat<-mat[rowSums(mat==0)<10,] # 발현 없는 거 제거
+buf<-c()
+for (i in rownames(mat)){buf<-c(buf,gene.name[gene.name$ensg==i,'gene'])}
+rownames(mat)<-buf
+pheatmap(mat[rowMax(mat)<7,],
+         cluster_cols = F,
+         border_color = NA,
+         annotation_col = an.label,
+         annotation_colors = an.col, color=colorRampPalette(c('#0c0','white','#d00'))(100),
+         breaks = seq(from = -7, to = 7, length.out = 100))
+
+mat
+max(rowSums(mat))
+hist(rowSums(mat))
+var(mat)
+summary(rowMax(mat))
+
+
+# 6 cohort2 IHC====
+buf<-data.frame('a'=c(4,14,11,5,4),'b'=c('0','1','2','3','4'),'x'=c(1,1,1,1,1))
+buf$aa<-buf$a/sum(buf$a)
+buf$aa
+buf$aaa<-c('10.5%', '36.8%', '28.9%','13.2%','10.5%')
+p.cohort2.pie<-ggplot(buf,aes(x=x,y=a,fill=b))+
+  geom_bar(stat='identity',color='black')+coord_polar('y',start=0)+
+  scale_fill_brewer(palette='Blues')+theme_void()+
+  theme(axis.line = element_blank(),
+        axis.text=element_blank(),
+        axis.ticks= element_blank(),
+        axis.title = element_blank(),
+        panel.grid=element_blank(),
+        strip.text=element_text(size=12),
+        legend.title = element_blank())+
+  geom_text(aes(x=1.7,y=c(2,27,14,7,36),label=aaa),size=4)
+p.cohort2.pie
+
+buf<-read.csv('')
+buf<-read.csv('data/260616_cohort2_meta.csv',header = T)
+buf
+as.character(buf$stain_level)
+p.cohort2.box<-ggplot(buf[buf$stain_level!=0,],aes(x=as.character(stain_level),y=size,fill=as.character(stain_level)))+
+  geom_boxplot()+gg.default+
+  scale_fill_manual(values=c('green','#FFa5a5','#FF6D6D','#FF1D1D','#CB1106'))+
+  theme(legend.position = 'none')+
+  labs(x='B.cereus staining intensity',y='Size')
+p.cohort2.box
+
+
+table(buf$Infertility.Y.N,buf$stain_level)
+buf1<-data.frame(a=c(0,0,4,4,3),b=c('0','1','2','3','4'))
+p.cohort1.infertility<-ggplot(buf1,aes(x=b,y=a,fill=''))+geom_bar(stat = 'identity')+gg.default+
+  scale_fill_manual(values='#C2113A')+theme(legend.position = 'none')+
+  labs(x='B.cereus staining intensity',y='Count of infertility cases')
+p.cohort1.infertility
+buf1<-data.frame(a=c(0,3,3,0,1),b=c('0','1','2','3','4'))
+p.cohort2.infertility<-ggplot(buf1,aes(x=b,y=a,fill=''))+geom_bar(stat = 'identity')+gg.default+
+  scale_fill_manual(values='#C2113A')+theme(legend.position = 'none')+
+  labs(x='B.cereus staining intensity',y='Count of infertility cases')
+p.cohort2.infertility
+
+buf2<-buf[buf$Anti.사용여부==1,]
+buf2$change<-100-buf2$size/buf2$post.anti.size*100
+buf2<-buf2[order(buf2$change,decreasing = T),]
+buf2$paired<-factor(1:nrow(buf2))
+table(buf2$stain_level,buf2$Infertility.Y.N)
+
+p.cohort2.change<-ggplot(buf2,aes(x=paired,y=change-1,fill=''))+
+  geom_bar(stat='identity')+gg.default+
+  scale_fill_manual(values = '#ff5555')+
+  geom_hline(yintercept = -1,linetype = 2)+
+  scale_y_continuous(breaks = c(19,9,-1,-11,-21,-31,-41),labels=c(20,10,0,-10,-20,-30,-40))+
+  theme(legend.position='none', 
+        axis.line.x=element_blank(),axis.ticks.x=element_blank(),axis.text.x=element_blank())+
+  labs(x='Patients',y='Size cahgne after antibiotic treatment (%)')
+
+buf2$pre.anti.통증점수
+buf2$post.anti.통증점수
+buf2$Anti.종류
+buf3<-melt(buf2[,c('pre.anti.통증점수','post.anti.통증점수','Anti.종류','paired')],
+           id.vars = c('paired','Anti.종류'))
+p.cohort2.pain<-ggplot(buf3,aes(x=variable,y=value,fill=variable))+geom_boxplot()+gg.default+
+  geom_line(aes(group=paired,colour=''))+scale_color_manual(values='gray')+
+  scale_fill_manual(values=c('#FF6D6D','#8E8EFF'))+
+  stat_compare_means(comparisons = list(c('pre.anti.통증점수','post.anti.통증점수')))+
+  theme(legend.position = 'none',axis.title.x=element_blank())+
+  scale_x_discrete(labels=c('pre_anti','post_anti'))+
+  labs(y='Pain score')
+
+p.cohort2.pie #
+p.cohort2.box #4 5
+p.cohort2.change #6 5
+p.cohort2.infertility #4 5
+p.cohort2.pain #3 5
+
+##6-1 cohort2 level 임의 조정----
+buf<-read.csv('data/260616_cohort2_meta.csv',header = T)
+table(buf$Anti.사용여부,buf$stain_level1)
+buf<-data.frame('a'=c(5,6,17,5,5),'b'=c('0','1','2','3','4'),'x'=c(1,1,1,1,1))
+buf$aa<-buf$a/sum(buf$a)
+buf$aa
+buf$aaa<-c('13.2%', '15.8%', '44.7%','13.2%','13.2%')
+ggplot(buf,aes(x=x,y=a,fill=b))+
+  geom_bar(stat='identity',color='black')+coord_polar('y',start=0)+
+  scale_fill_brewer(palette='Blues')+theme_void()+
+  theme(axis.line = element_blank(),
+        axis.text=element_blank(),
+        axis.ticks= element_blank(),
+        axis.title = element_blank(),
+        panel.grid=element_blank(),
+        strip.text=element_text(size=12),
+        legend.title = element_blank())+
+  geom_text(aes(x=1.6,y=c(3,30,18,8,35),label=aaa),size=4)
+
+buf<-read.csv('data/260616_cohort2_meta.csv',header = T)
+ggplot(buf,aes(x=as.character(stain_level1),y=size,fill=as.character(stain_level1)))+
+  geom_boxplot()+gg.default+
+  scale_fill_manual(values=c('#eeeeee','#FFa5a5','#FF6D6D','#FF1D1D','#CB1106'))+
+  theme(legend.position = 'none')+
+  labs(x='B.cereus staining intensity',y='Size')
+
+table(buf$Infertility.Y.N,buf$stain_level1)
+buf1<-data.frame(a=c(0,4,1,1),b=c('1','2','3','4'))
+ggplot(buf1,aes(x=b,y=a,fill=''))+geom_bar(stat = 'identity')+gg.default+
+  scale_fill_manual(values='#C2113A')+theme(legend.position = 'none')+
+  labs(x='B.cereus staining intensity',y='Count of infertility cases')
+
+buf2<-buf[buf$Anti.사용여부==1,]
+buf2$change<-100-buf2$size/buf2$post.anti.size*100
+buf2<-buf2[order(buf2$change,decreasing = T),]
+buf2$paired<-factor(1:nrow(buf2))
+
+ggplot(buf2,aes(x=paired,y=change-1,fill=''))+
+  geom_bar(stat='identity')+gg.default+
+  geom_hline(yintercept = -1,linetype = 2)+
+  scale_y_continuous(breaks = c(19,9,-1,-11,-21,-31,-41),labels=c(20,10,0,-10,-20,-30,-40))+
+  theme(legend.position='none', 
+        axis.line.x=element_blank(),axis.ticks.x=element_blank(),axis.text.x=element_blank())+
+  labs(x='Patients',y='Size cahgne after antibiotic treatment (%)')
+
+buf2$pre.anti.통증점수
+buf2$post.anti.통증점수
+buf2$Anti.종류
+buf3<-melt(buf2[,c('pre.anti.통증점수','post.anti.통증점수','Anti.종류','paired')],
+           id.vars = c('paired','Anti.종류'))
+p.cohort2.pain<-ggplot(buf3,aes(x=variable,y=value,fill=variable))+geom_boxplot()+gg.default+
+  geom_line(aes(group=paired,colour=''))+scale_color_manual(values='gray')+
+  scale_fill_manual(values=c('#FF6D6D','#8E8EFF'))+
+  stat_compare_means(comparisons = list(c('pre.anti.통증점수','post.anti.통증점수')))+
+  theme(legend.position = 'none',axis.title.x=element_blank())+
+  scale_x_discrete(labels=c('pre_anti','post_anti'))+
+  labs(y='Pain score')
+
+#7----
+buf <- run_lefse( physeq.filter.b,
+                               kw_cutoff=0.1,
+                               lda_cutoff = 2.5,
+                               norm = "CPM", 
+                               group = "condition",
+                               taxa_rank = 'all',
+                               multigrp_strat = TRUE
+)
+plot_ef_bar(buf)
+physeq.filter.b
+dim(mm_test.filter.b@marker_table)
+total.data.s.filter[startsWith(colnames(total.data.s.filter),'Bacteria_s_Fuso')]
+total.data.s.filter[startsWith(colnames(total.data.s.filter),'Bacteria_s_Baci')]
+colnames(total.data.s.filter)[12:233]
+dim(total.data.s.filter)
+rowSums(total.data.s.filter[,12:233])
+
+table(endsWith(mm_test.filter.b@tax_table,'bacterium'))
+mm_test.filter.b@tax_table[endsWith(mm_test.filter.b@tax_table,'bacterium')]
+mm_test.filter.b@tax_table[startsWith(mm_test.filter.b@tax_table,'k__DBacteria|p__Fusobacteriota|c__')]
+plot_ef_bar(mm_test.filter.b@marker_table[startsWith(mm_test.filter.b@tax_table,'k__DBacteria|p__Fusobacteriota|c__')])
+
+
+mm_test.filter.b@marker_table
+
+
+#8 revision R1----
+##8-1 bacillus 속 다른 종이 있는 지 확인----
+for (i in rownames(lefse.sdata.b)){
+  if (strsplit(i,'[|]')[[1]][6]=='g__Bacillus'){
+    show(i)
+  }
+}
+row.index<-c("d__Bacteria|p__Bacillota|c__Bacilli|o__Bacillales|f__Bacillaceae|g__Bacillus|s__Bacillus anthracis", "d__Bacteria|p__Bacillota|c__Bacilli|o__Bacillales|f__Bacillaceae|g__Bacillus|s__Bacillus cereus","d__Bacteria|p__Bacillota|c__Bacilli|o__Bacillales|f__Bacillaceae|g__Bacillus|s__Bacillus velezensis")
+buf<-sweep(lefse.sdata.b, 2, colSums(lefse.sdata.b), "/")
+colSums(buf)
+buf<-melt(t(buf[row.index,]))
+ggplot(buf,aes(x=Var2,y=value))+geom_bar(position="stack", stat="identity")+gg.default+
+  theme(axis.text.x=element_text(angle=60, hjust=1))+labs(y='Sum of relative abundances')
