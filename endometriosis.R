@@ -332,3 +332,27 @@ p.ihc.infertility1<-ggplot(stain.df[stain.df$Infertility==1,],
   theme(text=element_text(family='arial',size=12),
         legend.position = 'none')
 p.ihc.infertility1
+
+#SFigure 1----
+sig.taxa<-c()
+for (i in mm_test@marker_table$feature){
+  sig.taxa<-c(sig.taxa,paste0('Bacteria_s_',strsplit(i,'s__')[[1]][2]))
+}
+sfig.df<-mb.bacteria[,sig.taxa]
+sfig.df$cohort<-mb.df$condition
+
+colnames(sfig.df)<-c("Barnesiella viscericola",
+                     "Acidovorax sp. 5MLIR",
+                     "Rhodovastum atsumiense", 
+                     "Runella sp. SP2",
+                     "Bacillus cereus","cohort" )
+
+sfig.df.melt<-melt(sfig.df,id.vars = 'cohort')
+
+ggplot(sfig.df.melt, aes(x=cohort,y=value,fill=cohort))+geom_boxplot()+
+  facet_wrap(~variable,scales = 'free')+theme_pubr()+scale_fill_manual(values=c('#44f','#f44'))+
+  stat_compare_means(method='wilcox.test',label='p',family='arial',label.y.npc = 0.05,label.x.npc = 0.02)+
+  theme(text = element_text(family='arial',size=12),axis.ticks.x=element_blank(),
+        axis.title.x = element_blank(),axis.text.x = element_blank(),
+        strip.text=element_text(face='bold'))+
+  labs(color='',fill='',y='relative abundance')
